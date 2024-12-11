@@ -1,3 +1,5 @@
+# Kris Cooper 2024
+
 import numpy as np
 import scipy.signal as signal
 import scipy.fft as fft

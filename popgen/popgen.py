@@ -1,5 +1,6 @@
 # "Pop Music Generator"
 # Bart Massey 2024
+# Kris Cooper 2024
 #
 # This script puts out four bars in the "Axis Progression" chord loop,
 # with a melody and bass line.
@@ -60,6 +61,7 @@ def parse_db(d):
         raise ValueError
     return 10**(v / 20)
 
+# Added functions to generate different types of waves. Default is chosen at random.
 def generate_sine_wave(frequency, duration, amplitude, sample_rate):
     t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
     return amplitude * np.sin(2 * np.pi * frequency * t)
@@ -76,6 +78,7 @@ def generate_sawtooth_wave(frequency, duration, amplitude, sample_rate):
     t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
     return amplitude * (2 * ((t * frequency) % 1) - 1)
 
+# added time-sisgnature option to change that up
 ap = argparse.ArgumentParser()
 ap.add_argument('--bpm', type=int, default=90)
 ap.add_argument('--samplerate', type=int, default=48_000)
@@ -103,7 +106,7 @@ if len(time_signature) != 2:
 beats_per_measure = int(time_signature[0])
 measure_division = int(time_signature[1])
 
-# Samples per beat.
+# Samples per beat. Changed considering option to swith time signature
 beat_samples = int(np.round(samplerate / (bpm / 60)) * (beats_per_measure / measure_division))
 
 # Relative notes of a major scale.

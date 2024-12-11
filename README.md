@@ -8,6 +8,34 @@ Repository Contents
   II.   code.md
       1.    Clipper
       2.    Adaptive Tone Control
-      3.    ??
-      4.    Personal Project
+      3.    Popgen
+      4.    ???
   III.  retrospective.md
+
+  # Audio Processing Projects Repository
+
+## Author
+Kris Cooper
+
+## Overview
+This repository contains a collection of Python projects focused on audio processing and synthesis, showcasing various techniques for sound generation, manipulation, and enhancement.
+
+## Contents
+1. **PopGen**:
+   - Generates pseudo-melodies using chord and bass notes.
+   - Features waveform options, custom/random chord progressions, and dynamic time signatures.
+   - Enhancements: Added waveform variety, chord-loop customization, and time signature support.
+
+2. **Clipped Audio System**:
+   - Demonstrates WAV file generation and playback.
+   - Creates and plays pure and clipped sine waves with a focus on demonstrating distortion effects.
+   - Highlights: Real-time playback, clipping visualization, and foundational audio manipulation.
+
+3. **Tone Control Audio Processing**:
+   - Implements a tone control system to adjust low, mid, and high frequency bands.
+   - Features dynamic range compression, normalization, and smoothing to ensure balanced audio quality.
+   - Techniques: FFT-based adjustments, overlap-add processing, and real-time audio smoothing.
+
+## Usage
+Each project includes its own `README.md` with detailed installation steps, features, and usage examples.
+

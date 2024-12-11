@@ -1,0 +1,164 @@
+import numpy as np
+import scipy.signal as signal
+import scipy.fft as fft
+import os
+import soundfile as sf
+import librosa
+import librosa.display
+import matplotlib.pyplot as plt
+
+
+# Parameters
+FILE_NAME = "Gorillaz - On Melancholy Hill.wav"
+LOW_BAND = (0, 300)  # Low band frequencies in Hz
+MID_BAND = (300, 2000)  # Mid band frequencies in Hz
+HIGH_BAND = (2000, None)  # High band frequencies in Hz
+SAMPLE_RATE = 44100  # Typical audio sampling rate
+WINDOW_SIZE = 512  # Length of the FFT window
+HOP_SIZE = 256  # Overlap between windows
+TARGET_ENERGY = 1.0  # Target energy for all bands
+EPSILON = 1e-10 # Prevent cases where division by 0 for silent portions of tracks
+MAX_GAIN = 10.0  # Cap for the maximum gain to avoid excessive amplification
+
+# Load audio file
+def load_audio(file_path):
+    audio_data, sample_rate = librosa.load(file_path, sr=SAMPLE_RATE, mono=True)
+    return audio_data, sample_rate
+
+# Calculate band energy
+def calculate_band_energy(fft_magnitudes, freqs, band):
+    start_idx = np.searchsorted(freqs, band[0])
+    end_idx = np.searchsorted(freqs, band[1]) if band[1] else len(freqs)
+    return np.sum(fft_magnitudes[start_idx:end_idx]**2)
+
+# Normalize audio to avoid clipping
+def normalize_audio(audio):
+    max_val = np.max(np.abs(audio))
+    if max_val > 1.0:
+        audio = audio / max_val
+    elif max_val < EPSILON:
+        return audio  # Skip normalization if max_val is too low
+    return audio
+
+# Apply tone filters
+def apply_filters(audio_data, low_gain, mid_gain, high_gain, sample_rate):
+    # Design filters for each band
+    low_filter = signal.iirfilter(2, LOW_BAND[1]/(sample_rate/2), btype='low', ftype='butter')
+    mid_filter = signal.iirfilter(2, [LOW_BAND[1]/(sample_rate/2), MID_BAND[1]/(sample_rate/2)], btype='band', ftype='butter')
+    high_filter = signal.iirfilter(2, MID_BAND[1]/(sample_rate/2), btype='high', ftype='butter')
+    
+    # Apply filters with respective gains
+    low_band = signal.lfilter(*low_filter, audio_data) * low_gain
+    mid_band = signal.lfilter(*mid_filter, audio_data) * mid_gain
+    high_band = signal.lfilter(*high_filter, audio_data) * high_gain
+
+    # Combine Bands    
+    audio = low_band + mid_band + high_band
+    audio = normalize_audio(audio)
+
+    return audio
+
+# Main processing function
+def process_audio(file_path):
+    audio_data, sample_rate = load_audio(file_path)
+    num_frames = int((len(audio_data) - WINDOW_SIZE) / HOP_SIZE) + 1
+    output_audio = np.zeros_like(audio_data)
+
+    # Initialize smoothed gains
+    smoothed_low_gain = 1.0
+    smoothed_mid_gain = 1.0
+    smoothed_high_gain = 1.0
+    prev_alpha = 0.1  # Initial value for alpha
+    
+    def calculate_dynamic_alpha(energy_difference):
+        return min(0.3, max(0.05, energy_difference * 0.2))
+
+    for frame in range(num_frames):
+        start = frame * HOP_SIZE
+        end = start + WINDOW_SIZE
+        window = audio_data[start:end] * np.hanning(WINDOW_SIZE)
+        
+        # FFT and calculate energy
+        spectrum = fft.rfft(window)
+        freqs = fft.rfftfreq(WINDOW_SIZE, 1/sample_rate)
+        magnitudes = np.abs(spectrum)
+        
+        low_energy = calculate_band_energy(magnitudes, freqs, LOW_BAND)
+        mid_energy = calculate_band_energy(magnitudes, freqs, MID_BAND)
+        high_energy = calculate_band_energy(magnitudes, freqs, HIGH_BAND)
+        
+        # Calculate gain adjustments
+        low_gain = min(TARGET_ENERGY / (low_energy + EPSILON), MAX_GAIN)
+        mid_gain = min(TARGET_ENERGY / (mid_energy + EPSILON), MAX_GAIN)
+        high_gain = min(TARGET_ENERGY / (high_energy + EPSILON), MAX_GAIN)
+
+        # Normalize gains to avoid excessive amplification
+        max_gain = max(low_gain, mid_gain, high_gain)
+        if max_gain < EPSILON:
+            max_gain = 1.0
+        low_gain /= max_gain
+        mid_gain /= max_gain
+        high_gain /= max_gain
+
+        scaling_factor = TARGET_ENERGY / (low_gain + mid_gain + high_gain)
+        low_gain *= scaling_factor
+        mid_gain *= scaling_factor
+        high_gain *= scaling_factor
+
+        # Dynamically adjust alpha based on energy differences
+        energy_difference = abs(low_energy - mid_energy - high_energy) / (low_energy + mid_energy + high_energy + EPSILON)
+        alpha = prev_alpha * 0.8 + calculate_dynamic_alpha(energy_difference) * 0.2
+        prev_alpha = alpha
+
+        # Update smoothed gains
+        smoothed_low_gain = 0.9 * smoothed_low_gain + 0.1 * low_gain
+        smoothed_mid_gain = 0.9 * smoothed_mid_gain + 0.1 * mid_gain
+        smoothed_high_gain = 0.9 * smoothed_high_gain + 0.1 * high_gain
+        
+        # Apply filters
+        processed_frame = apply_filters(audio_data[start:end], smoothed_low_gain, smoothed_mid_gain, smoothed_high_gain, sample_rate)
+        output_audio[start:end] += processed_frame
+
+    overlap_factor = WINDOW_SIZE / HOP_SIZE
+    output_audio /= overlap_factor
+    output_audio = normalize_audio(output_audio)
+    
+    return output_audio
+
+# Apply dynamic range compression
+def compress_audio(audio_data, threshold=0.8, ratio=4.0):
+    rms_level = np.sqrt(np.mean(audio_data**2))
+    dynamic_threshold = max(0.5, min(0.8, rms_level * 1.5))
+
+    compressed_audio = np.copy(audio_data)
+    over_threshold = np.abs(audio_data) > dynamic_threshold
+    compressed_audio[over_threshold] = (
+        np.sign(audio_data[over_threshold])
+        * (dynamic_threshold + (np.abs(audio_data[over_threshold]) - dynamic_threshold) / ratio)
+    )
+    under_threshold = np.abs(audio_data) <= dynamic_threshold
+    compressed_audio[under_threshold] = audio_data[under_threshold]
+    return compressed_audio
+
+# Save the output audio
+def save_audio(output_audio, sample_rate, output_path):
+    sf.write(os.path.join(os.path.dirname(os.path.abspath(__file__)), output_path), output_audio, sample_rate)
+
+# Main execution
+def main():
+    try:
+        input_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), FILE_NAME)
+        file_name, extension = FILE_NAME.rsplit('.', 1)  
+        output_file = f"{file_name} (output).{extension}"
+
+        output_audio = process_audio(input_file)
+        output_audio = compress_audio(output_audio)
+        output_audio = normalize_audio(output_audio)
+        save_audio(output_audio, SAMPLE_RATE, output_file)
+        print(output_file, "created ...")
+
+    except Exception as e:
+        print(f"Error: {e}")
+
+if __name__ == "__main__":
+    main()
